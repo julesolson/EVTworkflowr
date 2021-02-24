@@ -1,0 +1,99 @@
+---
+title: "NEYanalysis"
+author: "julesolson"
+date: "2021-02-21"
+output: workflowr::wflow_html
+editor_options:
+  chunk_output_type: console
+---
+
+# Analysis of EVTs in New York which are not owned by TNC
+
+## The Data
+
+**236** EVTs exist in MAL, of which **166** are represented in TNC's ownership
+
+```{r echo=FALSE, results='asis', warning=FALSE}
+evt_ney <- read.csv("./data/US200EVT_NEY.csv")
+tnc_ney <- read.csv("./data/US200EVT_NEY_TNC.csv")
+library(knitr)
+
+kable(evt_ney[1:5, ], caption="EVT data for all of NEY (first five lines)")
+kable(tnc_ney[1:5, ], caption="EVT data for EVTs owned by The Nature Conservancy (first five lines)")
+```
+
+
+##Most Prevalent Unrepresented EVTs
+
+Identifying the EVTs not represented in TNC's ownership which make up the largest proportion of New York
+
+```{r echo=FALSE, warning=FALSE, include=FALSE}
+#Processing data for the Top 10 graph
+library(tidyverse)
+library(ggplot2)
+
+#Rename count columns and add percent and rank columns
+evt_ney<-evt_ney%>%
+  rename(COUNT_NEY=COUNT)%>%
+  arrange(desc(COUNT_NEY))%>%
+  mutate(PERCENT_NEY=round(COUNT_NEY/sum(COUNT_NEY)*100,4),
+         RANK_NEY=1:pull(tally(evt_ney)))
+tnc_ney<-tnc_ney%>%
+  rename(COUNT_TNC=COUNT)%>%
+  arrange(desc(COUNT_TNC))%>%
+  mutate(PERCENT_TNC=round(COUNT_TNC/sum(COUNT_TNC)*100,4),
+         RANK_TNC=1:pull(tally(tnc_ney)))
+
+#join the two data frames
+ney<- left_join(evt_ney, tnc_ney) %>%
+  replace(is.na(.), 0)
+
+#Filter this data so that we only have the EVTs in NEY not owned by TNC
+ney_notowned<-ney%>%
+  filter(COUNT_TNC==0 & EVT_PHYS!='Agricultural' & EVT_PHYS!='Developed' & EVT_PHYS!='Snow-Ice' & EVT_PHYS!='Exotic Herbaceous' & EVT_PHYS!= 'Exotic Tree-Shrub')%>%
+  select(-COUNT_TNC,-PERCENT_TNC,-RANK_TNC)
+
+#Grab the 10 largest EVTs not owned
+ney_tennotowned<-slice(ney_notowned,1:10)
+
+#Order the top 10 so that they are arranged by size in our plot rather than alphabetically
+orderney_tennotowned<-ney_tennotowned%>%
+  arrange(desc(PERCENT_NEY))%>%
+  mutate(EVT_NAME = factor(EVT_NAME, levels=EVT_NAME))
+
+#Get rid of space in "Sparsely Vegetated" so we can assign colors manually
+library(stringr)
+EVT_PHYSNS<-str_replace(orderney_tennotowned$EVT_PHYS," ","")
+orderney_tennotowned$EVT_PHYSNS<-EVT_PHYSNS
+orderney_tennotowned=subset(orderney_tennotowned, select=-EVT_PHYS)
+```
+```{r echo=FALSE, warning=FALSE, fig.width=9}
+ggplot(orderney_tennotowned, aes(x=EVT_NAME, y=PERCENT_NEY, fill=EVT_PHYSNS))+
+  geom_bar(stat='identity',position='dodge')+
+  coord_flip()+
+  labs(x="EVT",y="Percent of NEY",title="Top 10 EVT's in NEY not owned by TNC")+
+  scale_fill_manual(values=c(Conifer="olivedrab4", Riparian="navy", Grassland="navajowhite1", Shrubland="orange2", Hardwood= "orange4", SparselyVegetated="olivedrab1"))
+```
+
+##Unrepresented EVT PHYS Types
+
+```{r echo=FALSE, warning=FALSE, include=FALSE}
+#Now group all unowned EVTs by EVT_PHYS
+phys_ney_notowned<-ney_notowned %>% group_by(EVT_PHYS)%>%
+  summarise(PHYS_PERCENT_NEY = sum(PERCENT_NEY))%>%
+  arrange(desc(PHYS_PERCENT_NEY))
+
+#Remove unwanted PHYS types
+phys_ney_notowned<-phys_ney_notowned%>%
+  filter(EVT_PHYS!='Agricultural' & EVT_PHYS!='Developed' & EVT_PHYS!='Snow-Ice' & EVT_PHYS!='Exotic Herbaceous' & EVT_PHYS!= 'Exotic Tree-Shrub')
+```
+
+```{r echo=FALSE, warning= FALSE, fig.width=9}
+ggplot(phys_ney_notowned, aes(x=EVT_PHYS,y=PHYS_PERCENT_NEY))+
+  geom_bar(stat='identity', position='dodge')+
+  xlab("EVT Phys Type")+
+  ylab("Percent of NEY Area")+
+  ggtitle("Percent Areas of EVT PHYS Types in NEY not owned by TNC")+
+  theme_bw()
+```
+
